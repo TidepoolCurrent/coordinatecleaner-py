@@ -342,6 +342,132 @@ def cc_cap(
     return valid
 
 
+def cc_outl(
+    lon: NDArray,
+    lat: NDArray,
+    method: str = 'quantile',
+    threshold: float = 5.0,
+    min_records: int = 7
+) -> NDArray[np.bool_]:
+    """
+    Flag geographic outliers.
+    
+    Identifies records that are unusually far from other records
+    of the same species, which may indicate errors.
+    
+    Parameters
+    ----------
+    lon : ndarray
+        Longitude values
+    lat : ndarray
+        Latitude values
+    method : str
+        'quantile' - flag if distance > threshold * IQR above median
+        'mad' - flag if distance > threshold * MAD from median
+    threshold : float
+        Multiplier for outlier detection (default 5.0)
+    min_records : int
+        Minimum records needed; returns all True if fewer
+        
+    Returns
+    -------
+    valid : ndarray of bool
+        True if not an outlier
+        
+    Notes
+    -----
+    Calculates distance from each point to the centroid of all points,
+    then flags points with unusually large distances.
+    """
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    
+    n = len(lon)
+    
+    if n < min_records:
+        return np.ones(n, dtype=bool)
+    
+    # Calculate centroid
+    centroid_lon = np.nanmean(lon)
+    centroid_lat = np.nanmean(lat)
+    
+    # Distance to centroid (simple Euclidean in degrees)
+    # For more accuracy, should use haversine, but this is fast
+    distances = np.sqrt((lon - centroid_lon)**2 + (lat - centroid_lat)**2)
+    
+    if method == 'quantile':
+        q1, q3 = np.nanpercentile(distances, [25, 75])
+        iqr = q3 - q1
+        upper_bound = q3 + threshold * iqr
+        valid = distances <= upper_bound
+        
+    elif method == 'mad':
+        median = np.nanmedian(distances)
+        mad = np.nanmedian(np.abs(distances - median))
+        if mad == 0:
+            mad = 1e-10
+        upper_bound = median + threshold * mad * 1.4826  # Scale factor
+        valid = distances <= upper_bound
+        
+    else:
+        raise ValueError(f"Unknown method: {method}")
+    
+    return valid
+
+
+def cc_iucn(
+    lon: NDArray,
+    lat: NDArray,
+    range_polygon: NDArray = None
+) -> NDArray[np.bool_]:
+    """
+    Flag points outside species range polygon.
+    
+    Placeholder for IUCN range map comparison.
+    Requires a polygon defining the species range.
+    
+    Parameters
+    ----------
+    lon : ndarray
+        Longitude values
+    lat : ndarray
+        Latitude values
+    range_polygon : ndarray
+        Nx2 array of polygon vertices (lon, lat)
+        
+    Returns
+    -------
+    valid : ndarray of bool
+        True if inside range polygon
+    """
+    if range_polygon is None:
+        # No polygon provided, pass all
+        return np.ones(len(lon), dtype=bool)
+    
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    
+    # Simple point-in-polygon using ray casting
+    def point_in_polygon(x, y, poly):
+        n = len(poly)
+        inside = False
+        j = n - 1
+        for i in range(n):
+            xi, yi = poly[i]
+            xj, yj = poly[j]
+            if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+                inside = not inside
+            j = i
+        return inside
+    
+    valid = np.array([
+        point_in_polygon(lo, la, range_polygon) 
+        for lo, la in zip(lon, lat)
+    ])
+    
+    return valid
+
+
 def clean_coordinates(
     lon: NDArray,
     lat: NDArray,

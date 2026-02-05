@@ -4,7 +4,8 @@ import pytest
 import numpy as np
 from coordinatecleaner import (
     cc_val, cc_zero, cc_equ, cc_dupl, cc_round,
-    cc_gbif, cc_inst, cc_cap, clean_coordinates
+    cc_gbif, cc_inst, cc_cap, cc_outl, cc_iucn,
+    clean_coordinates
 )
 
 
@@ -223,3 +224,75 @@ class TestCleanCoordinates:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestCcOutl:
+    """Test geographic outlier detection."""
+    
+    def test_no_outliers(self):
+        """Clustered points should all pass."""
+        np.random.seed(42)
+        # Points clustered around (0, 0)
+        lon = np.random.normal(0, 1, 20)
+        lat = np.random.normal(0, 1, 20)
+        
+        result = cc_outl(lon, lat)
+        # Most should pass
+        assert np.sum(result) >= 18
+    
+    def test_with_outlier(self):
+        """Distant point should be flagged."""
+        # Cluster near (0, 0)
+        lon = np.array([0, 0.1, -0.1, 0.05, -0.05, 0.1, -0.1, 100])  # Last is outlier
+        lat = np.array([0, 0.1, -0.1, 0.05, -0.05, 0.1, -0.1, 100])
+        
+        result = cc_outl(lon, lat, threshold=3)
+        
+        # Outlier should fail
+        assert not result[-1]
+        # Others should pass
+        assert np.all(result[:-1])
+    
+    def test_min_records(self):
+        """Too few records should pass all."""
+        lon = np.array([0, 100])
+        lat = np.array([0, 100])
+        
+        result = cc_outl(lon, lat, min_records=7)
+        assert np.all(result)
+
+
+class TestCcIucn:
+    """Test range polygon checking."""
+    
+    def test_no_polygon(self):
+        """No polygon should pass all."""
+        lon = np.array([0, 1, 2])
+        lat = np.array([0, 1, 2])
+        
+        from coordinatecleaner import cc_iucn
+        result = cc_iucn(lon, lat)
+        assert np.all(result)
+    
+    def test_inside_polygon(self):
+        """Points inside polygon should pass."""
+        # Square polygon from (0,0) to (10,10)
+        polygon = np.array([[0, 0], [10, 0], [10, 10], [0, 10]])
+        
+        lon = np.array([5, 5, 5])
+        lat = np.array([5, 2, 8])
+        
+        from coordinatecleaner import cc_iucn
+        result = cc_iucn(lon, lat, range_polygon=polygon)
+        assert np.all(result)
+    
+    def test_outside_polygon(self):
+        """Points outside polygon should fail."""
+        polygon = np.array([[0, 0], [10, 0], [10, 10], [0, 10]])
+        
+        lon = np.array([15, -5])  # Outside
+        lat = np.array([5, 5])
+        
+        from coordinatecleaner import cc_iucn
+        result = cc_iucn(lon, lat, range_polygon=polygon)
+        assert np.all(~result)
