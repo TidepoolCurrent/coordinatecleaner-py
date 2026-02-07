@@ -296,3 +296,51 @@ class TestCcIucn:
         from coordinatecleaner import cc_iucn
         result = cc_iucn(lon, lat, range_polygon=polygon)
         assert np.all(~result)
+
+
+class TestCcSea:
+    """Test land/sea coordinate checking."""
+    
+    def test_without_mask_warns(self):
+        """Without land mask, should warn and return all valid."""
+        import warnings
+        lon = np.array([-122.4, -123.0])
+        lat = np.array([48.5, 49.0])
+        
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            from coordinatecleaner import cc_sea
+            result = cc_sea(lon, lat)
+            
+            # Should warn about missing land mask
+            assert len(w) == 1
+            assert "land_mask" in str(w[0].message)
+            
+            # Should return all valid (can't verify)
+            assert np.all(result)
+    
+    def test_with_land_mask(self):
+        """With land mask, should correctly identify land/sea."""
+        # Create simple land mask: land in center
+        land_mask = np.zeros((10, 10), dtype=bool)
+        land_mask[3:7, 3:7] = True  # Land in center
+        
+        extent = (0, 10, 0, 10)  # lon_min, lon_max, lat_min, lat_max
+        
+        # Point on land (center)
+        lon_land = np.array([5.0])
+        lat_land = np.array([5.0])
+        
+        # Point in water (corner)
+        lon_sea = np.array([1.0])
+        lat_sea = np.array([1.0])
+        
+        from coordinatecleaner import cc_sea
+        
+        # Land point should return False (not in sea)
+        result_land = cc_sea(lon_land, lat_land, land_mask=land_mask, land_mask_extent=extent)
+        assert not result_land[0]
+        
+        # Sea point should return True (in sea)
+        result_sea = cc_sea(lon_sea, lat_sea, land_mask=land_mask, land_mask_extent=extent)
+        assert result_sea[0]

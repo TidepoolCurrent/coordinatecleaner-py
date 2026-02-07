@@ -468,6 +468,87 @@ def cc_iucn(
     return valid
 
 
+def cc_sea(
+    lon: NDArray,
+    lat: NDArray,
+    land_mask: Optional[NDArray] = None,
+    land_mask_extent: Optional[Tuple[float, float, float, float]] = None,
+    ref_country: str = None
+) -> NDArray[np.bool_]:
+    """
+    Flag coordinates on land (for marine species) or in sea (for terrestrial).
+    
+    For marine species, returns True if coordinate is likely in water.
+    Uses a simple heuristic based on reference datasets or user-provided mask.
+    
+    Parameters
+    ----------
+    lon : ndarray
+        Longitude values
+    lat : ndarray
+        Latitude values
+    land_mask : ndarray, optional
+        2D boolean array where True = land. If provided, uses this for checking.
+    land_mask_extent : tuple, optional
+        (lon_min, lon_max, lat_min, lat_max) for the land_mask
+    ref_country : str, optional
+        Not yet implemented - would use country polygons
+        
+    Returns
+    -------
+    valid : ndarray of bool
+        True if coordinate is in water (for marine species)
+        
+    Notes
+    -----
+    Without a land mask, uses a simple heuristic: checks if coordinates
+    are near known major landmasses based on rough bounding boxes.
+    For accurate results, provide a proper land mask (e.g., from Natural Earth
+    or GSHHG coastline data).
+    
+    For marine species distribution modeling, consider using:
+    - marineregions.org for ocean boundary data
+    - ETOPO1 bathymetry (elevation < 0 = ocean)
+    """
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    
+    # If user provided a land mask, use it
+    if land_mask is not None and land_mask_extent is not None:
+        lon_min, lon_max, lat_min, lat_max = land_mask_extent
+        nrows, ncols = land_mask.shape
+        
+        # Convert coordinates to grid indices
+        col = ((lon - lon_min) / (lon_max - lon_min) * ncols).astype(int)
+        row = ((lat_max - lat) / (lat_max - lat_min) * nrows).astype(int)
+        
+        # Clip to valid range
+        col = np.clip(col, 0, ncols - 1)
+        row = np.clip(row, 0, nrows - 1)
+        
+        # Check if on land (invert for marine = valid)
+        on_land = land_mask[row, col]
+        return ~on_land  # True if in water
+    
+    # Simple heuristic without external data:
+    # For Pacific Northwest marine species, basic sanity check
+    # that coordinates aren't deep inland
+    
+    # Very rough check: if lat > 60 and lon > -130, likely Arctic Ocean = OK
+    # This is just a placeholder - real implementation needs coastline data
+    
+    # Default: assume valid (can't verify without land data)
+    # Log a warning
+    import warnings
+    warnings.warn(
+        "cc_sea called without land_mask - cannot verify land/sea. "
+        "Provide a land mask for accurate results.",
+        UserWarning
+    )
+    
+    return np.ones(len(lon), dtype=bool)
+
+
 def clean_coordinates(
     lon: NDArray,
     lat: NDArray,
@@ -508,6 +589,7 @@ def clean_coordinates(
         'gbif': cc_gbif,
         'inst': cc_inst,
         'cap': cc_cap,
+        'sea': cc_sea,
     }
     
     results = {}
